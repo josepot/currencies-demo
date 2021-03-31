@@ -1,17 +1,19 @@
+import { bind } from "@react-rxjs/core"
+import { combineKeys, createKeyedSignal, createSignal } from "@react-rxjs/utils"
+import { combineLatest, concat, defer, EMPTY, merge } from "rxjs"
+import { map, pluck, scan, startWith, switchMap } from "rxjs/operators"
 import { uuidv4 } from "./utils"
 
-export function getInitialCurrencies() {
-  return {
-    eur: 1.12,
-    usd: 1.33,
-    rup: 97.45,
-    aus: 1.75,
-    can: 1.75
-  }
+const initialCurrencyRates = {
+  eur: 1.12,
+  usd: 1.33,
+  rup: 97.45,
+  aus: 1.75,
+  can: 1.75
 }
 
-export function getInitialOrders() {
-  return [
+const initialOrders = Object.fromEntries(
+  [
     {
       id: uuidv4(),
       title: "The LEGO Movie 2: The Second Part",
@@ -36,54 +38,88 @@ export function getInitialOrders() {
       price: 1200,
       currency: "eur"
     }
-  ]
-}
+  ].map((order) => [order.id, order])
+)
 
-export function getOrderPrice(order, currencies) {
-  return order.price * (1 / currencies[order.currency])
-}
+const [add$, onAdd] = createSignal()
+const [orderPrice$, onChangeOrderPrice] = createKeyedSignal(
+  (x) => x.id,
+  (id, value) => ({ id, value })
+)
+const [orderCurrency$, onChangeCurrency] = createKeyedSignal(
+  (x) => x.id,
+  (id, value) => ({ id, value })
+)
+const [updateCurrencyRate$, onChangeCurrencyRate] = createKeyedSignal(
+  (x) => x.id,
+  (id, value) => ({ id, value })
+)
+export { onAdd, onChangeOrderPrice, onChangeCurrency, onChangeCurrencyRate }
 
-export function setOrderPrice(orders, orderId, price) {
-  return orders.map((order) =>
-    order.id === orderId
-      ? {
-          ...order,
-          price
-        }
-      : order
+const [useCurrencies, currencies$] = bind(
+  EMPTY,
+  Object.keys(initialCurrencyRates)
+)
+
+const [useCurrencyRate, currencyRate$] = bind((id) =>
+  updateCurrencyRate$(id).pipe(
+    pluck("value"),
+    startWith(initialCurrencyRates[id])
   )
-}
+)
 
-export function setOrderCurrency(orders, orderId, currency) {
-  return orders.map((order) =>
-    order.id === orderId
-      ? {
-          ...order,
-          currency
-        }
-      : order
-  )
-}
+export { useCurrencies, useCurrencyRate }
 
-export function getOrderTotal(orders, currencies) {
-  return orders.reduce(
-    (acc, order) => acc + getOrderPrice(order, currencies),
-    0
-  )
-}
+const initialIds = Object.keys(initialOrders)
+const [useOrderIds, orderIds$] = bind(
+  add$.pipe(
+    map(uuidv4),
+    scan((acc, id) => [...acc, id], initialIds)
+  ),
+  initialIds
+)
 
-export function addOrder(orders) {
-  return [
-    ...orders,
-    {
-      id: uuidv4(),
+const [useOrder, order$] = bind((id) =>
+  defer(() => {
+    const init = initialOrders[id] || {
+      id,
       title: "Item " + Math.round(Math.random() * 1000),
       price: Math.round(Math.random() * 1000),
       currency: "usd"
     }
-  ]
-}
 
-export function setCurrencyRate(currencies, currency, price) {
-  return { ...currencies, [currency]: price }
-}
+    const price = concat([init.price], orderPrice$(id).pipe(pluck("value")))
+    const currency = concat(
+      [init.currency],
+      orderCurrency$(id).pipe(pluck("value"))
+    )
+    const orderPrice = combineLatest([
+      currency.pipe(switchMap(currencyRate$)),
+      price
+    ]).pipe(map(([currencyRate, price]) => price * (1 / currencyRate)))
+
+    return combineLatest({
+      price,
+      currency,
+      orderPrice
+    }).pipe(map((update) => ({ ...init, ...update })))
+  })
+)
+
+export { useOrderIds, useOrder }
+
+const [useOrderTotal, orderTotal$] = bind(
+  combineKeys(orderIds$, order$).pipe(
+    map((orders) =>
+      Array.from(orders.values())
+        .map((x) => x.orderPrice)
+        .reduce((a, b) => a + b, 0)
+    )
+  )
+)
+export { useOrderTotal }
+
+export const source$ = merge(
+  orderTotal$,
+  combineKeys(currencies$, currencyRate$)
+)

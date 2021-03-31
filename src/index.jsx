@@ -1,163 +1,93 @@
 import * as React from "react"
-import {
-  useState,
-  useCallback,
-  memo,
-  useEffect,
-  createContext,
-  useRef,
-  useContext
-} from "react"
+import { memo } from "react"
 import { render } from "react-dom"
 import {
-  getInitialOrders,
-  getInitialCurrencies,
-  getOrderPrice,
-  setOrderPrice,
-  getOrderTotal,
-  setOrderCurrency,
-  setCurrencyRate,
-  addOrder
+  onAdd,
+  onChangeOrderPrice,
+  onChangeCurrency,
+  onChangeCurrencyRate,
+  useCurrencies,
+  useCurrencyRate,
+  useOrderIds,
+  useOrder,
+  useOrderTotal,
+  source$
 } from "./orders"
-import {
-  Table,
-  useForceUpdate,
-  formatPrice,
-  useForceUpdateRoot,
-  formatCurrency,
-  NumberInput
-} from "./utils"
+import { Table, formatPrice, formatCurrency, NumberInput } from "./utils"
 
 import "./styles.css"
+import { Subscribe } from "@react-rxjs/core"
 
-const CurrencyContext = createContext()
-
-const App = () => {
-  const [currencies, setCurrencies] = useState(getInitialCurrencies)
-  const [orders, setOrders] = useState(getInitialOrders)
-
-  const handleAdd = useCallback(() => {
-    setOrders((orders) => addOrder(orders))
-  }, [])
-  const handleChangePrice = useCallback((orderId, newPrice) => {
-    setOrders((orders) => setOrderPrice(orders, orderId, newPrice))
-  }, [])
-  const handleChangeCurrency = useCallback((orderId, newCurrency) => {
-    setOrders((orders) => setOrderCurrency(orders, orderId, newCurrency))
-  }, [])
-
-  const handleChangeCurrencyRate = useCallback((currency, newRate) => {
-    setCurrencies((currencies) =>
-      setCurrencyRate(currencies, currency, newRate)
-    )
-  }, [])
-
+const Orderline = memo(({ id }) => {
+  const order = useOrder(id)
   return (
-    <CurrencyContext.Provider value={currencies}>
-      <div className="App">
-        <h1>Orders</h1>
-        <Orders
-          orders={orders}
-          onChangePrice={handleChangePrice}
-          onChangeCurrency={handleChangeCurrency}
+    <tr>
+      <td>{order.title}</td>
+      <td>
+        <NumberInput
+          value={order.price}
+          onChange={(value) => {
+            onChangeOrderPrice(order.id, value)
+          }}
         />
-        <div className="actions">
-          <button onClick={handleAdd}>Add</button>
-          <OrderTotal orders={orders} />
-        </div>
-        <h1>Exchange rates</h1>
-        <Currencies
-          currencies={currencies}
-          onChangeCurrency={handleChangeCurrencyRate}
+      </td>
+      <td>
+        <Currency
+          value={order.currency}
+          onChange={(e) => {
+            onChangeCurrency(order.id, e.target.value)
+          }}
         />
-      </div>
-    </CurrencyContext.Provider>
+      </td>
+      <td>{formatPrice(order.orderPrice)} £</td>
+    </tr>
+  )
+})
+
+const Orders = () => {
+  const orderIds = useOrderIds()
+  return (
+    <Table columns={["Article", "Price", "Currency", "Price"]}>
+      {orderIds.map((id) => (
+        <Orderline key={id} id={id} />
+      ))}
+    </Table>
   )
 }
 
-const Orders = memo(({ orders, onChangePrice, onChangeCurrency }) => {
-  const currencies = useContext(CurrencyContext)
+const CurrencyRate = memo(({ currency }) => {
+  const rate = useCurrencyRate(currency)
   return (
-    <Table columns={["Article", "Price", "Currency", "Price"]}>
-      {orders.map((order) => (
-        <Orderline
-          key={order.id}
-          order={order}
-          currencies={currencies}
-          onChangeCurrency={onChangeCurrency}
-          onChangePrice={onChangePrice}
+    <tr key={currency}>
+      <td>{formatCurrency(currency)}</td>
+      <td>
+        <NumberInput
+          value={rate}
+          onChange={(value) => {
+            onChangeCurrencyRate(currency, value)
+          }}
         />
-      ))}
-    </Table>
+      </td>
+    </tr>
   )
 })
 
-const Orderline = memo(
-  ({ order, onChangePrice, onChangeCurrency, currencies }) => {
-    return (
-      <tr>
-        <td>{order.title}</td>
-        <td>
-          <NumberInput
-            value={order.price}
-            onChange={(value) => {
-              onChangePrice(order.id, value)
-            }}
-          />
-        </td>
-        <td>
-          <Currency
-            value={order.currency}
-            onChange={(e) => {
-              onChangeCurrency(order.id, e.target.value)
-            }}
-          />
-        </td>
-        <td>{formatPrice(getOrderPrice(order, currencies))} £</td>
-      </tr>
-    )
-  },
-  (prev, next) =>
-    prev.order === next.order &&
-    (prev.currencies === next.currencies ||
-      prev.currencies[prev.order.currency] ===
-        next.currencies[next.order.currency])
-)
-
-const OrderTotal = memo(({ orders }) => {
-  const currencies = useContext(CurrencyContext)
-  return (
-    <div className="total">
-      {formatPrice(getOrderTotal(orders, currencies))} £
-    </div>
-  )
-})
-
-const Currencies = memo(({ currencies, onChangeCurrency }) => {
+const Currencies = () => {
+  const currencies = useCurrencies()
   return (
     <Table columns={["Currency", "Exchange rate"]}>
-      {Object.entries(currencies).map(([currency, rate]) => (
-        <tr key={currency}>
-          <td>{formatCurrency(currency)}</td>
-          <td>
-            <NumberInput
-              value={rate}
-              onChange={(value) => {
-                onChangeCurrency(currency, value)
-              }}
-            />
-          </td>
-        </tr>
+      {currencies.map((currency) => (
+        <CurrencyRate key={currency} currency={currency} />
       ))}
     </Table>
   )
-})
+}
 
 export function Currency({ value, onChange }) {
-  const currencies = useContext(CurrencyContext)
+  const currencies = useCurrencies()
   return (
     <select onChange={onChange} value={value}>
-      {Object.keys(currencies).map((c) => (
+      {currencies.map((c) => (
         <option key={c} value={c}>
           {formatCurrency(c)}
         </option>
@@ -165,6 +95,26 @@ export function Currency({ value, onChange }) {
     </select>
   )
 }
+
+const OrderTotal = () => {
+  const total = useOrderTotal()
+  return <div className="total">{formatPrice(total)} £</div>
+}
+
+const App = () => (
+  <Subscribe source$={source$}>
+    <div className="App">
+      <h1>Orders</h1>
+      <Orders />
+      <div className="actions">
+        <button onClick={onAdd}>Add</button>
+        <OrderTotal />
+      </div>
+      <h1>Exchange rates</h1>
+      <Currencies />
+    </div>
+  </Subscribe>
+)
 
 const rootElement = document.getElementById("app")
 render(<App />, rootElement)
