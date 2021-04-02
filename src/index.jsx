@@ -1,22 +1,32 @@
-import * as React from "react"
-import { memo } from "react"
+import React, { memo } from "react"
 import { render } from "react-dom"
+import "./styles.css"
+import { Table, formatPrice, formatCurrency, NumberInput } from "./utils"
 import {
-  onAdd,
-  onChangeOrderPrice,
-  onChangeCurrency,
-  onChangeCurrencyRate,
   useCurrencies,
+  onRateChange,
   useCurrencyRate,
+  onAddOrder,
   useOrderIds,
+  onPriceChange,
+  onCurrencyChange,
   useOrder,
   useOrderTotal,
-  source$
+  Provider
 } from "./orders"
-import { Table, formatPrice, formatCurrency, NumberInput } from "./utils"
 
-import "./styles.css"
-import { Subscribe } from "@react-rxjs/core"
+function CurrencySelector({ value, onChange }) {
+  const currencies = useCurrencies()
+  return (
+    <select onChange={onChange} value={value}>
+      {currencies.map((c) => (
+        <option key={c} value={c}>
+          {formatCurrency(c)}
+        </option>
+      ))}
+    </select>
+  )
+}
 
 const Orderline = memo(({ id }) => {
   const order = useOrder(id)
@@ -27,15 +37,15 @@ const Orderline = memo(({ id }) => {
         <NumberInput
           value={order.price}
           onChange={(value) => {
-            onChangeOrderPrice(order.id, value)
+            onPriceChange(order.id, value)
           }}
         />
       </td>
       <td>
-        <Currency
+        <CurrencySelector
           value={order.currency}
           onChange={(e) => {
-            onChangeCurrency(order.id, e.target.value)
+            onCurrencyChange(order.id, e.target.value)
           }}
         />
       </td>
@@ -55,7 +65,7 @@ const Orders = () => {
   )
 }
 
-const CurrencyRate = memo(({ currency }) => {
+const CurrencyRate = ({ currency }) => {
   const rate = useCurrencyRate(currency)
   return (
     <tr key={currency}>
@@ -64,13 +74,13 @@ const CurrencyRate = memo(({ currency }) => {
         <NumberInput
           value={rate}
           onChange={(value) => {
-            onChangeCurrencyRate(currency, value)
+            onRateChange(currency, value)
           }}
         />
       </td>
     </tr>
   )
-})
+}
 
 const Currencies = () => {
   const currencies = useCurrencies()
@@ -83,37 +93,24 @@ const Currencies = () => {
   )
 }
 
-export function Currency({ value, onChange }) {
-  const currencies = useCurrencies()
-  return (
-    <select onChange={onChange} value={value}>
-      {currencies.map((c) => (
-        <option key={c} value={c}>
-          {formatCurrency(c)}
-        </option>
-      ))}
-    </select>
-  )
-}
-
 const OrderTotal = () => {
   const total = useOrderTotal()
   return <div className="total">{formatPrice(total)} £</div>
 }
 
 const App = () => (
-  <Subscribe source$={source$}>
+  <Provider>
     <div className="App">
       <h1>Orders</h1>
       <Orders />
       <div className="actions">
-        <button onClick={onAdd}>Add</button>
+        <button onClick={onAddOrder}>Add</button>
         <OrderTotal />
       </div>
       <h1>Exchange rates</h1>
       <Currencies />
     </div>
-  </Subscribe>
+  </Provider>
 )
 
 const rootElement = document.getElementById("app")
